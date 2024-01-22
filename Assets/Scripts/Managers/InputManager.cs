@@ -7,11 +7,27 @@ using UnityEngine;
 
 public class InputManager : MonoBehaviour
 {
-    [SerializeField] LayerMask pieceMask;
+    [SerializeField] LayerMask pieceLayer;
     [SerializeField] MovementManager MM;
+    [SerializeField] LevelManager LM;
+    [SerializeField] float minDist;
 
     Transform objToMove;
     Transform finalPos;
+    Transform saveObj;
+    Vector3 savePos;
+    int saveNChilds;
+    bool canUndoMove;
+
+    private void OnEnable()
+    {
+        FoodPiece.OnAutoUndoMove += UndoMove;
+    }
+
+    private void OnDisable()
+    {
+        FoodPiece.OnAutoUndoMove -= UndoMove;
+    }
 
     private void Update()
     {
@@ -19,33 +35,66 @@ public class InputManager : MonoBehaviour
 
         Ray ray = Camera.main.ScreenPointToRay(Input.touches[0].position);
         RaycastHit hit;
-        if (Physics.Raycast(ray, out hit, Mathf.Infinity, pieceMask))
+        if (Physics.Raycast(ray, out hit, Mathf.Infinity))
         {
-            if (Input.touches[0].phase == TouchPhase.Began)
+            if (!hit.transform.CompareTag("Ground"))
             {
-                objToMove = hit.transform;
-            }
-            else /*if (Input.touches[0].phase == TouchPhase.Ended)*/
-            {
-                if (CheckMove(hit.transform))
+                if (Input.touches[0].phase == TouchPhase.Began)
                 {
-                    finalPos = hit.transform;
+                    objToMove = hit.transform;
+                }
+                else if (Vector3.Distance(hit.point, objToMove.position) > minDist && objToMove != null)
+                {
+                    Vector3 dir = (hit.point - objToMove.position).normalized;
+                    if (Mathf.Abs(dir.z) > Mathf.Abs(dir.x))
+                    {
+                        if (dir.z > 0) CheckMove(new Vector3(objToMove.position.x, 0, objToMove.position.z + 1));
+                        else CheckMove(new Vector3(objToMove.position.x, 0, objToMove.position.z - 1));
+                    }
+                    else
+                    {
+                        if (dir.x > 0) CheckMove(new Vector3(objToMove.position.x + 1, 0, objToMove.position.z));
+                        else CheckMove(new Vector3(objToMove.position.x - 1, 0, objToMove.position.z));
+                    }
                 }
             }
         }
 
         if (Input.touches[0].phase == TouchPhase.Ended)
         {
-            if (finalPos != null) MM.MovePiece(objToMove, finalPos);
-            objToMove = null;
-            finalPos = null;
+            if (objToMove != null && finalPos != null)
+            {
+                if (MM.MovePiece(objToMove, finalPos)) SaveMove(objToMove, new Vector3(objToMove.position.x, 0, objToMove.position.z), objToMove.childCount);
+                objToMove = null;
+                finalPos = null;
+            }
         }
     }
 
-    bool CheckMove(Transform hitted)
+    void CheckMove(Vector3 finPos)
     {
-        if (Mathf.Abs(Mathf.Abs(objToMove.position.x) - Mathf.Abs(hitted.position.x)) == 1f && Mathf.Abs(Mathf.Abs(objToMove.position.z) - Mathf.Abs(hitted.position.z)) == 0f) return true;
-        if (Mathf.Abs(Mathf.Abs(objToMove.position.x) - Mathf.Abs(hitted.position.x)) == 0f && Mathf.Abs(Mathf.Abs(objToMove.position.z) - Mathf.Abs(hitted.position.z)) == 1f) return true;
-        return false;
+        Vector3 finDir = finPos - Camera.main.transform.position;
+        RaycastHit secHit;
+        if (Physics.Raycast(Camera.main.transform.position, finDir, out secHit, Mathf.Infinity, pieceLayer))
+        {
+            finalPos = secHit.transform;
+        }
+    }
+
+    void SaveMove(Transform obj, Vector3 pos, int childs)
+    {
+        canUndoMove = true;
+        saveObj = obj;
+        savePos = pos;
+        saveNChilds = childs;
+    }
+
+    public void UndoMove()
+    {
+        if (canUndoMove)
+        {
+            MM.MovePiece(saveObj.parent != null ? saveObj.parent : saveObj, savePos, saveNChilds);
+            canUndoMove = false;
+        }
     }
 }
